@@ -7,7 +7,7 @@ import os
 
 # Load environment variables from .env file (explicit path so it works from any cwd)
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.env')
-load_dotenv(_env_path, override=True)
+load_dotenv(_env_path, override=False)
 
 
 def generate_summary(book_query, db: Session, session=None):
@@ -54,7 +54,7 @@ RULES:
 
     try:
         client = genai.Client(api_key=api_key)
-        MODEL_ID = "models/gemini-3.6-flash"
+        MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,

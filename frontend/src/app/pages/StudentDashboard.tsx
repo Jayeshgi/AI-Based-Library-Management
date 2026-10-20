@@ -1,3 +1,4 @@
+import { apiFetch, getAccessToken } from '../data/api';
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router';
 import ChatbotPage from './ChatbotPage';
@@ -188,7 +189,7 @@ export default function StudentDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
-    if (window.localStorage.getItem('smart-library-student-auth') !== 'true' || !user) {
+    if (!getAccessToken() || window.localStorage.getItem('smart-library-student-auth') !== 'true' || !user) {
       navigate('/student/login', { replace: true });
     }
   }, [navigate, user]);
@@ -250,6 +251,7 @@ export default function StudentDashboard() {
 
       // Connect WebSocket
       const socket = new WebSocket(`${WS_URL}/ws/borrow/student/${user.admission_number}`);
+      socket.onopen = () => socket.send(JSON.stringify({ token: getAccessToken() }));
       socket.onmessage = (event) => {
         const data = JSON.parse(event.data);
         console.log("📩 WS message received:", data);
@@ -507,6 +509,7 @@ export default function StudentDashboard() {
   };
 
   const handleLogout = () => {
+    window.sessionStorage.removeItem('smart-library-token');
     window.localStorage.removeItem('smart-library-student-auth');
     window.localStorage.removeItem('smart-library-user');
   };

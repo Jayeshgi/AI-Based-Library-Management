@@ -31,7 +31,7 @@ npm.cmd install
 Copy-Item .env.example .env
 ```
 
-Keep both `.env` files and `backend/app/credentials/firebase_key.json` private. They are ignored by Git. Firebase is required only for Google sign-in; the seeded local student login works without it (password: `demo123`).
+Keep both `.env` files and `backend/app/credentials/firebase_key.json` private. They are ignored by Git. Firebase is required only for Google sign-in; student registration and admission-number login work without it. Shared demo passwords are disabled. Set a unique `ADMIN_PASSWORD` (at least 12 characters) and `ADMIN_EMAIL` in `.env` for admin login.
 
 Start the application in two terminals:
 
@@ -132,7 +132,7 @@ Open the local address printed by Vite (normally `http://127.0.0.1:5173`).
 - **SQLAlchemy**: Advanced ORM for database operations
 - **SQLite**: Lightweight, file-based database
 - **Pandas**: Data processing and CSV manipulation
-- **Sentence Transformers**: AI-powered text embeddings for NLP
+- **Gemini Embeddings**: API-based semantic search without a local model download
 - **Google Generative Al (Gemini 2.5)**: Large Language Model for advanced text reasoning, summarization, and intent extraction
 - **Firebase Admin SDK**: Server-side verification of user authentication tokens
 

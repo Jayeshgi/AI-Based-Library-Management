@@ -13,7 +13,8 @@
 #   - Caching (that's agent.py's job)
 
 import math
-from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+from backend.app.chatbot.embeddings import embed_texts
 
 
 # ============================================================================
@@ -79,7 +80,7 @@ def expand_query(query):
 # ============================================================================
 # 2. SCORING ENGINE
 # ============================================================================
-def nlp_filter_books(user_prompt, books, embedding_model, book_embeddings, top_n=5):
+def nlp_filter_books(user_prompt, books, book_embeddings, top_n=5):
     """
     The core scoring engine. Scores every book using 4 factors:
 
@@ -91,7 +92,6 @@ def nlp_filter_books(user_prompt, books, embedding_model, book_embeddings, top_n
     Args:
         user_prompt (str):       The topic/query extracted by agent.py.
         books (list):            List of book dicts from agent.py's cache.
-        embedding_model:         SentenceTransformer model from agent.py's cache.
         book_embeddings:         Numpy array of precomputed book embeddings.
         top_n (int):             Number of top results to return.
 
@@ -105,10 +105,11 @@ def nlp_filter_books(user_prompt, books, embedding_model, book_embeddings, top_n
     expanded_query = expand_query(user_prompt)
 
     # Step 2: Create embedding for the expanded query
-    query_embedding = embedding_model.encode([expanded_query])
+    query_embedding = embed_texts([expanded_query], "RETRIEVAL_QUERY")[0]
 
     # Step 3: Calculate cosine similarity between query and all book embeddings
-    similarities = cosine_similarity(query_embedding, book_embeddings)[0]
+    norms = np.linalg.norm(book_embeddings, axis=1) * np.linalg.norm(query_embedding)
+    similarities = (book_embeddings @ query_embedding) / np.maximum(norms, 1e-12)
 
     # Step 4: Score each book using the multi-factor formula
     scored_books = []
@@ -149,7 +150,7 @@ def nlp_filter_books(user_prompt, books, embedding_model, book_embeddings, top_n
 # ============================================================================
 # 3. PUBLIC API (Called by agent.py)
 # ============================================================================
-def get_recommendations(topic, books, embedding_model, book_embeddings, top_n=5):
+def get_recommendations(topic, books, book_embeddings, top_n=5):
     """
     The main entry point for the search engine.
     Called by agent.py when a RECOMMEND intent is detected.
@@ -157,11 +158,10 @@ def get_recommendations(topic, books, embedding_model, book_embeddings, top_n=5)
     Args:
         topic (str):             The topic/query the user wants recommendations for.
         books (list):            List of book dicts (from agent.py's cache).
-        embedding_model:         SentenceTransformer model (from agent.py's cache).
         book_embeddings:         Numpy array of embeddings (from agent.py's cache).
         top_n (int):             Number of top results to return (default: 5).
 
     Returns:
         list: Top N book dicts sorted by relevance.
     """
-    return nlp_filter_books(topic, books, embedding_model, book_embeddings, top_n=top_n)
+    return nlp_filter_books(topic, books, book_embeddings, top_n=top_n)

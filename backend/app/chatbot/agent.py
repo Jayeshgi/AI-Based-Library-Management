@@ -3,23 +3,22 @@
 # ===========================================
 # This file is the "brain" of the library chatbot.
 # Responsibilities:
-#   1. Load book data from CSV files
-#   2. Create and cache AI embeddings (persistent .npy files)
+#   1. Load book data from the database
+#   2. Create and cache Gemini embeddings in memory
 #   3. Detect user intent using Gemini AI
 #   4. Route intents to specialized modules (recommend, summary, review, borrow)
 #   5. Format recommendation results into premium responses
 
 import os
-import numpy as np
-import pandas as pd
 from google import genai
 from google.genai import types
-from sentence_transformers import SentenceTransformer
+from collections import OrderedDict
+from backend.app.chatbot.embeddings import embed_texts
 from dotenv import load_dotenv
 
 # Load environment variables from .env file (explicit path so it works from any cwd)
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..', '.env')
-load_dotenv(_env_path, override=True)
+load_dotenv(_env_path, override=False)
 
 from sqlalchemy.orm import Session
 from backend.app.models.models import Book
@@ -28,12 +27,7 @@ from backend.app.models.models import Book
 # ============================================================================
 # GLOBAL CACHES (In-Memory)
 # ============================================================================
-BOOKS_CACHE = {}          # { "CS": [book_dict, ...] }
-EMBEDDINGS_CACHE = {}     # { "CS": numpy_array }
-EMBEDDING_MODEL = None    # SentenceTransformer instance (loaded once)
-
-# Paths
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "cache")
+EMBEDDINGS_CACHE = OrderedDict()
 
 # Map of display name to database filter name (if different)
 DEPARTMENT_MAP = {
@@ -80,76 +74,17 @@ def get_books_from_db(db: Session, department: str):
     return books
 
 
-def _get_cache_path(department):
-    """Returns the absolute path to the department's cached embeddings."""
-    return os.path.join(CACHE_DIR, f"{department}_embeddings.npy")
-
-
-def _is_cache_stale(department):
-    """
-    Checks if cached embeddings exist. 
-    (For now, we generate fresh if missing. In prod we'd check timestamps or DB counts).
-    """
-    cache_path = _get_cache_path(department)
-    return not os.path.exists(cache_path)
-
-
-def _load_embedding_model():
-    """Loads the SentenceTransformer model once and caches it globally."""
-    global EMBEDDING_MODEL
-    if EMBEDDING_MODEL is None:
-        EMBEDDING_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-    return EMBEDDING_MODEL
-
-
-def _generate_and_save_embeddings(department, books):
-    """
-    Generates embeddings for all books and saves them to disk as .npy.
-    Returns the numpy array of embeddings.
-    """
-    model = _load_embedding_model()
-    book_texts = [b["search_blob"] for b in books]
-    embeddings = model.encode(book_texts, show_progress_bar=False)
-
-    # Save to disk for persistence
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    cache_path = _get_cache_path(department)
-    np.save(cache_path, embeddings)
-    print(f"[Cache] Saved embeddings for '{department}' → {cache_path}")
-
-    return embeddings
-
-
 def ensure_books_and_embeddings(session, db: Session):
-    """
-    The main "manager" function. Ensures books and embeddings are ready.
-    """
     dept = session["department"]
-
-    # Load books into memory cache (or database query)
-    if dept not in BOOKS_CACHE:
-        BOOKS_CACHE[dept] = get_books_from_db(db, dept)
-
-    books = BOOKS_CACHE[dept]
-
-    # Check if we need to generate or can load from disk
-    if dept not in EMBEDDINGS_CACHE or _is_cache_stale(dept):
-        cache_path = _get_cache_path(dept)
-
-        if os.path.exists(cache_path):
-            # Load from disk (fast path)
-            embeddings = np.load(cache_path)
-            model = _load_embedding_model()
-            print(f"[Cache] Loaded embeddings for '{dept}' from disk")
-        else:
-            # Generate fresh embeddings and save to disk
-            print(f"[Cache] Generating fresh embeddings for '{dept}'...")
-            embeddings = _generate_and_save_embeddings(dept, books)
-            model = _load_embedding_model()
-
-        EMBEDDINGS_CACHE[dept] = (model, embeddings)
-
-    return books, EMBEDDINGS_CACHE[dept]
+    books = get_books_from_db(db, dept)
+    fingerprint = tuple((b["book_id"], b["search_blob"]) for b in books)
+    cached = EMBEDDINGS_CACHE.get(dept)
+    if cached is None or cached[0] != fingerprint:
+        embeddings = embed_texts([b["search_blob"] for b in books])
+        EMBEDDINGS_CACHE[dept] = (fingerprint, embeddings)
+        if len(EMBEDDINGS_CACHE) > 16:
+            EMBEDDINGS_CACHE.popitem(last=False)
+    return books, EMBEDDINGS_CACHE[dept][1]
 
 
 # ============================================================================
@@ -161,7 +96,9 @@ def gemini_agent(session, user_message, db: Session):
     Detects the user's intent and routes to the correct handler.
     """
     # Ensure books and embeddings are loaded for this department using the DB
-    books, (embedding_model, book_embeddings) = ensure_books_and_embeddings(session, db)
+    if not os.getenv("GEMINI_API_KEY"):
+        return "The AI assistant is not configured yet. You can still browse and borrow books."
+    books, book_embeddings = ensure_books_and_embeddings(session, db)
 
     def build_chat_context(chat_history=None):
         if chat_history is None:
@@ -230,7 +167,7 @@ Do NOT answer book/borrow/recommendation queries directly - only detect intent a
         return "Error: Gemini API key not configured."
     try:
         client = genai.Client(api_key=api_key)
-        MODEL_ID = "models/gemini-3.6-flash"
+        MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,
             temperature=0.3
@@ -244,15 +181,15 @@ Do NOT answer book/borrow/recommendation queries directly - only detect intent a
         gemini_intent = response.text.strip()
         # Debugging: Uncomment to see Gemini's raw thinking
         # print(f"--- DEBUG: Gemini Response ---\n{gemini_intent}\n--- END DEBUG ---")
-        return process_intent(gemini_intent, session, user_message, books, embedding_model, book_embeddings, db)
+        return process_intent(gemini_intent, session, user_message, books, book_embeddings, db)
     except Exception as e:
-        return f"Error: {e}"
+        return "The AI service is unavailable. Please try again later."
 
 
 # ============================================================================
 # 4. INTENT ROUTING
 # ============================================================================
-def process_intent(intent_response, session, user_message, books, embedding_model, book_embeddings, db: Session):
+def process_intent(intent_response, session, user_message, books, book_embeddings, db: Session):
     """
     Parses the structured intent from Gemini and routes to the correct handler.
     For RECOMMEND: calls recommend.py's search engine, then formats with Gemini.
@@ -269,7 +206,7 @@ def process_intent(intent_response, session, user_message, books, embedding_mode
 
         if intent == 'RECOMMEND':
             topic = intent_info.get('TOPIC', '')
-            return handle_recommendation(topic, session, books, embedding_model, book_embeddings)
+            return handle_recommendation(topic, session, books, book_embeddings)
 
         elif intent == 'SUMMARY':
             book = intent_info.get('BOOK', '')
@@ -296,13 +233,13 @@ def process_intent(intent_response, session, user_message, books, embedding_mode
             return intent_response
 
     except Exception as e:
-        return f"Error processing intent: {str(e)}"
+        return "The AI request could not be processed. Please try again."
 
 
 # ============================================================================
 # 5. RECOMMENDATION HANDLER (Calls recommend.py + Premium Formatting)
 # ============================================================================
-def handle_recommendation(topic, session, books, embedding_model, book_embeddings):
+def handle_recommendation(topic, session, books, book_embeddings):
     """
     1. Calls recommend.py's search engine to get top books.
     2. Uses Gemini to format the raw results into a premium, conversational response.
@@ -310,7 +247,7 @@ def handle_recommendation(topic, session, books, embedding_model, book_embedding
     try:
         from backend.app.chatbot.recommend import get_recommendations
         # Get scored recommendations (Top 5)
-        scored_books = get_recommendations(topic, books, embedding_model, book_embeddings, top_n=5)
+        scored_books = get_recommendations(topic, books, book_embeddings, top_n=5)
         
         # Split into Primary and Related based on Threshold
         primary = []
@@ -383,7 +320,7 @@ def format_recommendations_with_gemini(primary_books, related_books, user_topic,
             temperature=0.5
         )
         response = client.models.generate_content(
-            model="models/gemini-3.6-flash",
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents=prompt,
             config=config
         )

@@ -266,7 +266,7 @@ export default function StudentLogin() {
                 </div>
 
                 <div className="flex items-center justify-end text-sm">
-                  <button type="button" onClick={() => switchMode('reset')} className="font-medium text-sky-700 hover:underline dark:text-sky-300">
+                  <button type="button" onClick={() => setError('Please contact your library administrator to recover your account.')} className="font-medium text-sky-700 hover:underline dark:text-sky-300">
                     Forgot password?
                   </button>
                 </div>

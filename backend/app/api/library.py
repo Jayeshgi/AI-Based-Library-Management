@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import random
 from backend.app.models.models import User, Book, BorrowedBook, Review
 from backend.app.core.database import get_db
+from backend.app.core.security import require_admin, require_own_account, current_student
 
 router = APIRouter(tags=["Library"])
 
@@ -18,7 +19,7 @@ def get_all_books(db: Session = Depends(get_db)):
     books = db.query(Book).all()
     return books
 
-@router.get("/user-borrow-history/{admission_number}")
+@router.get("/user-borrow-history/{admission_number}", dependencies=[Depends(require_own_account)])
 def get_user_borrow_history(admission_number: str, db: Session = Depends(get_db)):
     """
     Fetches the complete borrowing history for a student from MySQL.
@@ -55,7 +56,7 @@ def get_user_borrow_history(admission_number: str, db: Session = Depends(get_db)
 
     return results
 
-@router.get("/user-active-borrows/{admission_number}")
+@router.get("/user-active-borrows/{admission_number}", dependencies=[Depends(require_own_account)])
 def get_user_active_borrows(admission_number: str, db: Session = Depends(get_db)):
     """
     Fetches currently issued books for the dashboard.
@@ -88,13 +89,13 @@ def get_user_active_borrows(admission_number: str, db: Session = Depends(get_db)
 
     return results
 
-@router.post("/borrow")
+@router.post("/borrow", dependencies=[Depends(require_admin)])
 def borrow_book(admission_number: str, book_id: str, db: Session = Depends(get_db)):
     """
     API endpoint for borrowing a book (Syncs with the chatbot logic).
     """
     user = db.query(User).filter(User.admission_number == admission_number).first()
-    book = db.query(Book).filter(Book.book_id == book_id).first()
+    book = db.query(Book).filter(Book.book_id == book_id).with_for_update().first()
 
     if not user or not book:
         raise HTTPException(status_code=404, detail="User or Book not found")
@@ -129,13 +130,17 @@ def borrow_book(admission_number: str, book_id: str, db: Session = Depends(get_d
 class ReviewCreate(BaseModel):
     book_id: str
     user_id: str
-    review: str
+    review: str = Field(min_length=1, max_length=5000)
 
 @router.post("/review")
-def add_review(payload: ReviewCreate, db: Session = Depends(get_db)):
+def add_review(payload: ReviewCreate, db: Session = Depends(get_db), user: User = Depends(current_student)):
     """
     Submits a user review for a specific book to the MySQL database.
     """
+    if payload.user_id != user.user_id:
+        raise HTTPException(status_code=403, detail="You can only review as yourself")
+    if db.get(Book, payload.book_id) is None:
+        raise HTTPException(status_code=404, detail="Book not found")
     new_review = Review(
         book_id=payload.book_id,
         user_id=payload.user_id,
@@ -151,7 +156,7 @@ def add_review(payload: ReviewCreate, db: Session = Depends(get_db)):
 # ADMIN ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.get("/admin/borrow-records")
+@router.get("/admin/borrow-records", dependencies=[Depends(require_admin)])
 def get_all_borrow_records(db: Session = Depends(get_db)):
     """
     Returns all borrow records with student names and book titles for the admin dashboard.
@@ -195,20 +200,12 @@ def get_all_borrow_records(db: Session = Depends(get_db)):
     return results
 
 
-@router.get("/admin/students")
+@router.get("/admin/students", dependencies=[Depends(require_admin)])
 def get_all_students(db: Session = Depends(get_db)):
     """
     Returns all students with their total and active borrow counts for the admin directory.
-    Only returns students who have at least one record in BorrowedBook.
     """
-    # Find all user IDs that have at least one borrow record
-    user_ids_with_history = db.query(BorrowedBook.user_id).distinct().all()
-    user_ids = [u[0] for u in user_ids_with_history]
-    
-    if not user_ids:
-        return []
-
-    students = db.query(User).filter(User.user_id.in_(user_ids)).all()
+    students = db.query(User).all()
     results = []
 
     for student in students:
@@ -238,7 +235,7 @@ def get_all_students(db: Session = Depends(get_db)):
     return results
 
 
-@router.get("/admin/student/{user_id}/borrows")
+@router.get("/admin/student/{user_id}/borrows", dependencies=[Depends(require_admin)])
 def get_student_borrow_details(user_id: str, db: Session = Depends(get_db)):
     """
     Returns detailed borrow history for a specific student (for View Details modal).
@@ -264,18 +261,20 @@ class BookCreate(BaseModel):
     title: str
     author: str
     department: str
-    total_copies: int
-    available_copies: Optional[int] = None
+    total_copies: int = Field(ge=0, le=100000)
+    available_copies: Optional[int] = Field(default=None, ge=0, le=100000)
     column_dept: Optional[str] = None
     shelf_no: Optional[str] = None
     rack_no: Optional[str] = None
 
 
-@router.post("/admin/books")
+@router.post("/admin/books", dependencies=[Depends(require_admin)])
 def add_book(payload: BookCreate, db: Session = Depends(get_db)):
     """
     Adds a new book with an auto-generated book_id (B-XXX format).
     """
+    if payload.available_copies is not None and payload.available_copies > payload.total_copies:
+        raise HTTPException(status_code=400, detail="Available copies cannot exceed total copies")
     # Auto-generate a unique book_id in B-XXX format
     existing_ids = set(
         row[0] for row in db.query(Book.book_id).all()
@@ -307,20 +306,22 @@ def add_book(payload: BookCreate, db: Session = Depends(get_db)):
 
 
 class BookCopiesUpdate(BaseModel):
-    total_copies: int
+    total_copies: int = Field(ge=0, le=100000)
 
 
-@router.put("/admin/books/{book_id}/copies")
+@router.put("/admin/books/{book_id}/copies", dependencies=[Depends(require_admin)])
 def update_book_copies(book_id: str, payload: BookCopiesUpdate, db: Session = Depends(get_db)):
     """
     Updates total_copies and auto-adjusts available_copies proportionally.
     E.g. total 5->6 means available 2->3 (diff added to available).
     """
-    book = db.query(Book).filter(Book.book_id == book_id).first()
+    book = db.query(Book).filter(Book.book_id == book_id).with_for_update().first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
     diff = payload.total_copies - book.total_copies
+    if book.available_copies + diff < 0:
+        raise HTTPException(status_code=400, detail="Total copies cannot be less than copies currently borrowed")
     book.total_copies = payload.total_copies
     book.available_copies = max(0, book.available_copies + diff)
     db.commit()
@@ -334,15 +335,17 @@ def update_book_copies(book_id: str, payload: BookCopiesUpdate, db: Session = De
     }
 
 
-@router.delete("/admin/books/{book_id}")
+@router.delete("/admin/books/{book_id}", dependencies=[Depends(require_admin)])
 def delete_book(book_id: str, db: Session = Depends(get_db)):
     """
     Deletes a book from the catalog.
     """
-    book = db.query(Book).filter(Book.book_id == book_id).first()
+    book = db.query(Book).filter(Book.book_id == book_id).with_for_update().first()
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
+    if db.query(BorrowedBook).filter_by(Book_ID=book_id, status="issued").first():
+        raise HTTPException(status_code=409, detail="Return all issued copies before deleting this book")
     db.delete(book)
     db.commit()
     return {"message": "Book deleted successfully", "book_id": book_id}

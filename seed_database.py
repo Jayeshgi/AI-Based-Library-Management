@@ -1,4 +1,4 @@
-"""Load the repository's supplied CSV catalog and student records into the local database.
+"""Load the repository's supplied CSV book catalog without creating demo accounts.
 
 This script is idempotent: it adds rows that do not already exist and preserves
 any books, users, and transactions created during a demo.
@@ -10,11 +10,10 @@ import csv
 from pathlib import Path
 
 from backend.app.core.database import Base, SessionLocal, engine
-from backend.app.models.models import Book, User
+from backend.app.models.models import Book
 
 
 ROOT = Path(__file__).resolve().parent
-DEFAULT_PASSWORD = "demo123"
 
 
 def value(row: dict[str, str], key: str) -> str:
@@ -44,35 +43,12 @@ def seed_books(session) -> int:
     return added
 
 
-def seed_users(session) -> int:
-    added = 0
-    for path in (ROOT / "datasets" / "dept_students").glob("*.csv"):
-        with path.open(encoding="utf-8-sig", newline="") as source:
-            for row in csv.DictReader(source):
-                admission_number = value(row, "Admission_Number")
-                if not admission_number or session.query(User).filter_by(admission_number=admission_number).first():
-                    continue
-                session.add(User(
-                    user_id=f"U-{admission_number}",
-                    name=value(row, "Name") or admission_number,
-                    admission_number=admission_number,
-                    department=value(row, "Department"),
-                    password=DEFAULT_PASSWORD,
-                    email=f"{admission_number.lower()}@demo.local",
-                    class_name="Demo",
-                ))
-                added += 1
-    return added
-
-
 def main() -> None:
     Base.metadata.create_all(bind=engine)
     with SessionLocal() as session:
         books = seed_books(session)
-        users = seed_users(session)
         session.commit()
-    print(f"Database ready: added {books} books and {users} users.")
-    print(f"Demo student password: {DEFAULT_PASSWORD}")
+    print(f"Database ready: added {books} books.")
 
 
 if __name__ == "__main__":

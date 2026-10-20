@@ -6,18 +6,15 @@ from sqlalchemy.orm import Session
 from backend.app.models.models import User
 from backend.app.schemas.schemas import AdminLogin, PasswordReset, UserCreate, UserLogin, UserProfileUpdate
 from backend.app.core.database import get_db
-from backend.app.core.security import hash_password, verify_password
+from backend.app.core.security import hash_password, verify_password, create_access_token, require_own_account
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 def _valid_password(password: str) -> bool:
-    return len(password) >= 8
+    return 8 <= len(password) <= 128
 
 def _password_matches(plain: str, stored: str) -> bool:
-    """Support seeded legacy accounts while all new/updated passwords are hashed."""
-    if stored.startswith("$2"):
-        return verify_password(plain, stored)
-    return compare_digest(plain, stored)
+    return verify_password(plain, stored)
 
 def _user_payload(user: User) -> dict:
     return {
@@ -28,6 +25,7 @@ def _user_payload(user: User) -> dict:
         "email": user.email,
         "class_name": user.class_name,
         "contact_no": user.contact_no,
+        "access_token": create_access_token({"sub": user.user_id, "role": "student"}),
     }
 
 @router.post("/login")
@@ -40,6 +38,8 @@ def login(data: UserLogin, db: Session = Depends(get_db)):
 
 @router.post("/register")
 def register(data: UserCreate, db: Session = Depends(get_db)):
+    data.admission_number = data.admission_number.strip()
+    data.email = data.email.lower().strip()
     if not _valid_password(data.password):
         raise HTTPException(status_code=400, detail="Password must contain at least 8 characters")
     if db.query(User).filter(User.admission_number == data.admission_number).first():
@@ -63,7 +63,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 def password_reset(data: PasswordReset, db: Session = Depends(get_db)):
     # This local-demo reset deliberately requires both values. Production must use
     # an emailed OTP or identity-provider verification before enabling this route.
-    if not os.getenv("ALLOW_DEMO_PASSWORD_RESET", "true").lower() == "true":
+    if os.getenv("APP_ENV") == "production" or os.getenv("ALLOW_DEMO_PASSWORD_RESET", "false").lower() != "true":
         raise HTTPException(status_code=403, detail="Password reset is disabled by the administrator")
     if not _valid_password(data.new_password):
         raise HTTPException(status_code=400, detail="Password must contain at least 8 characters")
@@ -79,14 +79,17 @@ def password_reset(data: PasswordReset, db: Session = Depends(get_db)):
 
 @router.post("/admin/login")
 def admin_login(data: AdminLogin):
-    expected_email = os.getenv("ADMIN_EMAIL", "admin@library.local")
-    expected_password = os.getenv("ADMIN_PASSWORD", "admin123")
+    expected_email = os.getenv("ADMIN_EMAIL", "")
+    expected_password = os.getenv("ADMIN_PASSWORD", "")
+    if not expected_email or len(expected_password) < 12:
+        raise HTTPException(status_code=503, detail="Administrator login is not configured")
     if not (compare_digest(data.email.lower().strip(), expected_email.lower()) and compare_digest(data.password, expected_password)):
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
-    return {"message": "Admin login successful", "email": expected_email}
+    return {"message": "Admin login successful", "email": expected_email,
+            "access_token": create_access_token({"sub": expected_email, "role": "admin"})}
 
 
-@router.put("/profile/{admission_number}")
+@router.put("/profile/{admission_number}", dependencies=[Depends(require_own_account)])
 def update_profile(admission_number: str, profile_data: UserProfileUpdate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.admission_number == admission_number).first()
     if not user:

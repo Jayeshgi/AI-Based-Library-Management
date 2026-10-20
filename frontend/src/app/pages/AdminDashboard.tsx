@@ -1,3 +1,4 @@
+import { apiFetch, getAccessToken } from '../data/api';
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { getAdminBorrowRecords, getAdminStudents, getStudentBorrowDetails, addBook, updateBookCopies, deleteBook, getBooks, BASE_URL, WS_URL } from '../data/api';
@@ -135,7 +136,7 @@ export default function AdminDashboard() {
   const [pendingRequests, setPendingRequests] = useState<any[]>([]);
 
   useEffect(() => {
-    if (window.localStorage.getItem('smart-library-admin-auth') !== 'true') {
+    if (!getAccessToken() || window.localStorage.getItem('smart-library-admin-auth') !== 'true') {
       navigate('/admin/login', { replace: true });
     }
   }, [navigate]);
@@ -143,6 +144,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     // Connect WebSocket
     const socket = new WebSocket(`${WS_URL}/ws/borrow/admin/admin`);
+    socket.onopen = () => socket.send(JSON.stringify({ token: getAccessToken() }));
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'borrow_request_admin' || data.type === 'return_request_admin') {
@@ -177,7 +179,7 @@ export default function AdminDashboard() {
 
   const fetchAnalytics = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/analytics`);
+      const response = await apiFetch(`${BASE_URL}/analytics`);
       const json = await response.json();
       setAnalyticsData(json);
     } catch (error) {
@@ -193,7 +195,7 @@ export default function AdminDashboard() {
 
   const fetchRecentActivity = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/recent-activity?limit=6`);
+      const response = await apiFetch(`${BASE_URL}/recent-activity?limit=6`);
       const json = await response.json();
       if (json.success && json.activities) {
         setRecentActivities(json.activities);
@@ -295,6 +297,7 @@ export default function AdminDashboard() {
     } catch { setStudentBorrows([]); }
   };
   const handleLogout = () => {
+    window.sessionStorage.removeItem('smart-library-token');
     window.localStorage.removeItem('smart-library-admin-auth');
     navigate('/admin/login', { replace: true });
   };

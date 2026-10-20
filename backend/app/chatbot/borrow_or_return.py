@@ -63,7 +63,7 @@ MESSAGE:[reason]
 
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             contents="Process",
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -139,14 +139,4 @@ def execute_return(user_id, book, db: Session):
     if not record:
         return f"You don't have an active borrowing record for '{book.title}'."
 
-    # Update record
-    now = datetime.now()
-    record.r_date = now.date()
-    record.r_time = now.time()
-    record.status = "returned"
-
-    # Update book count
-    book.available_copies += 1
-
-    db.commit()
-    return f"✅ Successfully returned: **{book.title}**. Thank you!"
+    return f"To return **{book.title}**, open Borrow History and use the Return button so a librarian can approve it."

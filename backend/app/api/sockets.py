@@ -1,6 +1,10 @@
 import json
+import logging
 import asyncio
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+import time
+import uuid
+from backend.app.core.security import verify_token
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from backend.app.core.database import SessionLocal
@@ -16,7 +20,6 @@ class ConnectionManager:
         self.active_admins: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket, role: str, user_id: str):
-        await websocket.accept()
         if role == "student":
             self.active_students[user_id] = websocket
         elif role == "admin":
@@ -48,11 +51,11 @@ class ConnectionManager:
         if student_id in self.active_students:
             try:
                 await self.active_students[student_id].send_json(data)
-                print(f"✅ Successfully sent to student {student_id}: {data['type']}")
+                logging.debug(f"✅ Successfully sent to student {student_id}: {data['type']}")
             except Exception as e:
-                print(f"❌ Failed to send to {student_id}: {e}")
+                logging.debug(f"❌ Failed to send to {student_id}: {e}")
         else:
-            print(f"⚠️ Student {student_id} not found in active_students! Connected: {list(self.active_students.keys())}")
+            logging.debug(f"⚠️ Student {student_id} not found in active_students! Connected: {list(self.active_students.keys())}")
 
 manager = ConnectionManager()
 
@@ -61,8 +64,8 @@ pending_requests = {}
 
 async def request_timeout_cycle(request_id: str, student_id: str, book_id: str, req_type: str = "borrow"):
     await asyncio.sleep(60) # 60 second timeout
-    if pending_requests.get(request_id) == "pending":
-        print(f"Request timeout for {request_id}")
+    if request_id in pending_requests:
+        logging.debug(f"Request timeout for {request_id}")
         # Send failure to student
         del pending_requests[request_id]
         
@@ -75,16 +78,42 @@ async def request_timeout_cycle(request_id: str, student_id: str, book_id: str, 
 
 @router.websocket("/ws/borrow/{role}/{user_id}")
 async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: str):
+    await websocket.accept()
+    try:
+        auth_message = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+        identity = verify_token(auth_message.get("token", ""))
+        if identity["role"] != role or role not in ("student", "admin"):
+            raise HTTPException(status_code=403)
+        if role == "student":
+            with SessionLocal() as db:
+                user = db.get(User, identity["sub"])
+                if user is None or user.admission_number != user_id:
+                    raise HTTPException(status_code=403)
+    except (HTTPException, asyncio.TimeoutError, ValueError, AttributeError, WebSocketDisconnect):
+        await websocket.close(code=1008)
+        return
     await manager.connect(websocket, role, user_id)
+    await websocket.send_json({"type": "authenticated"})
     try:
         while True:
             # We expect JSON messages
-            data = await websocket.receive_json()
+            remaining = identity["exp"] - time.time()
+            if remaining <= 0:
+                await websocket.close(code=1008)
+                break
+            data = await asyncio.wait_for(websocket.receive_json(), timeout=remaining)
+            if not isinstance(data, dict):
+                await websocket.close(code=1008)
+                break
+            if role == "student" and data.get("type") in ("borrow_request", "return_request"):
+                if sum(1 for request in pending_requests.values() if request[0] == user_id) >= 5:
+                    await websocket.send_json({"type": "error", "reason": "Wait for your pending requests"})
+                    continue
             
             if data.get("type") == "borrow_request" and role == "student":
                 book_id = data.get("book_id")
                 # Generate unique request id
-                request_id = f"REQ_{user_id}_{book_id}_{int(datetime.now().timestamp())}"
+                request_id = uuid.uuid4().hex
                 
                 # Verify logic with DB (check if book has copies, etc.)
                 db = SessionLocal()
@@ -116,7 +145,7 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                         continue
 
                     # Queue it up for timeout checking
-                    pending_requests[request_id] = "pending"
+                    pending_requests[request_id] = (user_id, book_id, "borrow")
                     
                     # Alert Admins
                     await manager.broadcast_to_admins({
@@ -139,24 +168,26 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                 request_id = data.get("request_id")
                 student_id = data.get("student_id")
                 book_id = data.get("book_id")
-                approved = data.get("approved")
+                approved = data.get("approved") is True
                 
                 # Check if it was already processed or timed out
-                if pending_requests.get(request_id) != "pending":
+                if pending_requests.get(request_id) != (student_id, book_id, "borrow"):
                     continue # Skip
                     
                 # Mark as processed
-                pending_requests[request_id] = "processed"
+                pending_requests.pop(request_id, None)
 
                 if approved:
                     # Update Database
                     try:
                         db = SessionLocal()
                         try:
-                            book = db.query(Book).filter(Book.book_id == book_id).first()
+                            book = db.query(Book).filter(Book.book_id == book_id).with_for_update().first()
                             user = db.query(User).filter(User.admission_number == student_id).first()
                             
-                            if book and book.available_copies > 0:
+                            if book and user and book.available_copies > 0 and not db.query(BorrowedBook).filter_by(
+                                user_id=user.user_id, Book_ID=book_id, status="issued"
+                            ).first():
                                 book.available_copies -= 1
                                 now = datetime.now()
                                 new_record = BorrowedBook(
@@ -191,7 +222,7 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                         await manager.send_to_student(student_id, {
                             "type": "borrow_response",
                             "status": "error",
-                            "reason": f"Database Error: {str(e)}"
+                            "reason": "The transaction could not be completed. Please try again."
                         })
                 else:
                     # Rejected by Admin
@@ -203,14 +234,14 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
 
             elif data.get("type") == "return_request" and role == "student":
                 issue_id = data.get("issue_id")
-                request_id = f"RET_{user_id}_{issue_id}_{int(datetime.now().timestamp())}"
+                request_id = uuid.uuid4().hex
                 
                 db = SessionLocal()
                 try:
                     record = db.query(BorrowedBook).filter(BorrowedBook.issue_id == issue_id).first()
                     user = db.query(User).filter(User.admission_number == user_id).first()
                     
-                    if not record or not user:
+                    if not record or not user or record.user_id != user.user_id:
                         await manager.send_to_student(user_id, {
                             "type": "return_response", "status": "error", "reason": "Issue record not found"
                         })
@@ -225,7 +256,7 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                     book = db.query(Book).filter(Book.book_id == record.Book_ID).first()
                     book_title = book.title if book else "Unknown Book"
 
-                    pending_requests[request_id] = "pending"
+                    pending_requests[request_id] = (user_id, issue_id, "return")
                     
                     await manager.broadcast_to_admins({
                         "type": "return_request_admin",
@@ -247,48 +278,48 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                 request_id = data.get("request_id")
                 student_id = data.get("student_id")
                 issue_id = data.get("issue_id")
-                approved = data.get("approved")
+                approved = data.get("approved") is True
                 
-                print(f"🔄 Return response received: req={request_id}, student={student_id}, issue={issue_id}, approved={approved}")
-                print(f"🔄 Pending requests: {pending_requests}")
+                logging.debug(f"🔄 Return response received: req={request_id}, student={student_id}, issue={issue_id}, approved={approved}")
+                logging.debug(f"🔄 Pending requests: {pending_requests}")
                 
-                if pending_requests.get(request_id) != "pending":
-                    print(f"❌ Request {request_id} not found in pending_requests or already processed!")
+                if pending_requests.get(request_id) != (student_id, issue_id, "return"):
+                    logging.debug(f"❌ Request {request_id} not found in pending_requests or already processed!")
                     continue
 
-                pending_requests[request_id] = "processed"
-                print(f"✅ Request marked as processed, proceeding...")
+                pending_requests.pop(request_id, None)
+                logging.debug(f"✅ Request marked as processed, proceeding...")
 
                 if approved:
                     try:
                         db = SessionLocal()
                         try:
-                            record = db.query(BorrowedBook).filter(BorrowedBook.issue_id == issue_id).first()
+                            record = db.query(BorrowedBook).filter(BorrowedBook.issue_id == issue_id).with_for_update().first()
                             if record and record.status == "issued":
-                                book = db.query(Book).filter(Book.book_id == record.Book_ID).first()
+                                book = db.query(Book).filter(Book.book_id == record.Book_ID).with_for_update().first()
                                 
                                 now = datetime.now()
                                 original_due_date = record.r_date  # Capture due date before overwriting
-                                print(f"📅 Before update: r_date={record.r_date}, or_date={record.or_date}")
+                                logging.debug(f"📅 Before update: r_date={record.r_date}, or_date={record.or_date}")
                                 record.or_date = original_due_date  # Save original due date
                                 record.r_date = now.date()          # Actual return date
                                 record.r_time = now.time()
                                 record.status = "returned"
-                                print(f"📅 After update: r_date={record.r_date}, or_date={record.or_date}")
+                                logging.debug(f"📅 After update: r_date={record.r_date}, or_date={record.or_date}")
                                 
                                 if book:
                                     book.available_copies += 1
                                 
-                                print(f"💾 About to commit return for issue {issue_id}...")
+                                logging.debug(f"💾 About to commit return for issue {issue_id}...")
                                 db.commit()
-                                print(f"💾 Commit successful! Sending response to student {student_id}...")
+                                logging.debug(f"💾 Commit successful! Sending response to student {student_id}...")
                                 
                                 await manager.send_to_student(student_id, {
                                     "type": "return_response",
                                     "status": "approved",
                                     "book_title": book.title if book else "The book"
                                 })
-                                print(f"📤 Response sent to student!")
+                                logging.debug(f"📤 Response sent to student!")
                             else:
                                 await manager.send_to_student(student_id, {
                                     "type": "return_response", "status": "error", "reason": "Record not found or not active"
@@ -299,7 +330,7 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                         import traceback
                         traceback.print_exc()
                         await manager.send_to_student(student_id, {
-                            "type": "return_response", "status": "error", "reason": f"Database Error: {str(e)}"
+                            "type": "return_response", "status": "error", "reason": "The transaction could not be completed. Please try again."
                         })
                 else:
                     await manager.send_to_student(student_id, {
@@ -308,5 +339,7 @@ async def websocket_borrow_endpoint(websocket: WebSocket, role: str, user_id: st
                         "reason": "Admin rejected the return request."
                     })
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, asyncio.TimeoutError, ValueError, TypeError):
+        pass
+    finally:
         manager.disconnect(websocket, role, user_id)

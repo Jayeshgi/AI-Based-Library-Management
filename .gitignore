@@ -18,6 +18,7 @@ cache/
 # Credentials folder
 credentials/
 venv/
+.deploy-venv/
 *.db
 *.sqlite3
 
