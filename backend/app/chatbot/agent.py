@@ -167,7 +167,7 @@ Do NOT answer book/borrow/recommendation queries directly - only detect intent a
         return "Error: Gemini API key not configured."
     try:
         client = genai.Client(api_key=api_key)
-        MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,
             temperature=0.3
@@ -320,7 +320,7 @@ def format_recommendations_with_gemini(primary_books, related_books, user_topic,
             temperature=0.5
         )
         response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            model=os.getenv("GEMINI_MODEL", "gemini-3.6-flash"),
             contents=prompt,
             config=config
         )

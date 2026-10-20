@@ -54,7 +54,7 @@ RULES:
 
     try:
         client = genai.Client(api_key=api_key)
-        MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        MODEL_ID = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,

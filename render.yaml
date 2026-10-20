@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: smart-library-api
+    name: jayesh-smart-library-api
     runtime: python
     plan: free
+    region: singapore
     buildCommand: pip install -r requirements.txt
     startCommand: python seed_database.py && uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers 1 --ws-max-size 8192
     healthCheckPath: /health
@@ -26,9 +27,9 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.6-flash
   - type: web
-    name: smart-library
+    name: jayesh-smart-library
     runtime: static
     rootDir: frontend
     buildCommand: npm ci && npm run build
@@ -38,6 +39,8 @@ services:
         source: /*
         destination: /index.html
     envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
       - key: VITE_BACKEND_URL
         sync: false
       - key: VITE_WS_URL
