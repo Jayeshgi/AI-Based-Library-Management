@@ -1,10 +1,9 @@
-import { createBrowserRouter } from 'react-router';
+import { createBrowserRouter, redirect } from 'react-router';
 import Home from './pages/Home';
 import StudentLogin from './pages/StudentLogin';
 import AdminLogin from './pages/AdminLogin';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
-import ChatbotPage from './pages/ChatbotPage';
 import Developers from './pages/Developers';
 
 export const router = createBrowserRouter([
@@ -30,7 +29,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/student/chatbot',
-    Component: ChatbotPage,
+    loader: () => redirect('/student/dashboard'),
   },
   {
     path: '/developers',

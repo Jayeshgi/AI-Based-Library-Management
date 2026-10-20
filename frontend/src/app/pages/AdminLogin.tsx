@@ -102,7 +102,7 @@ export default function AdminLogin() {
               />
             </div>
 
-            <p className="text-xs text-slate-500 dark:text-slate-400">For the local demo: <strong>admin@library.local</strong> / <strong>admin123</strong>. Change these in the root <code>.env</code> before deploying.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Sign in with the administrator account provided for this library.</p>
 
             <Button type="submit" disabled={loading} className="h-12 w-full rounded-2xl bg-slate-900 text-white hover:bg-slate-800 disabled:opacity-70 dark:bg-slate-100 dark:text-slate-950 dark:hover:bg-white">
               {loading ? 'Signing in...' : 'Login to Dashboard'}
