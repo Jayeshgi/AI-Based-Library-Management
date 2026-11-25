@@ -1,6 +1,18 @@
+import databaseCover from '../assets/images/books/SY IT/DBMS.jpg';
+import algorithmsCover from '../assets/images/books/SY IT/DSA.jpg';
+import mathsCover from '../assets/images/books/SY IT/Maths 3.jpg';
+import architectureCover from '../assets/images/books/SY COMP/COA.jpg';
+
+const subjectShelf = [
+  ['Database systems', 'Database', databaseCover],
+  ['Algorithms', 'Algorithm', algorithmsCover],
+  ['Mathematics', 'Mathematics', mathsCover],
+  ['Computer architecture', 'Computer Organization', architectureCover],
+];
+
 import { apiFetch, getAccessToken } from '../data/api';
 import { useState, useEffect, useRef } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useLocation, useNavigate } from 'react-router';
 import ChatbotPage from './ChatbotPage';
 import {
   Book,
@@ -64,7 +76,7 @@ function FloatingChatbot({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       onClick={onOpen}
-      className="fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-blue-700 text-white shadow-[0_20px_45px_-18px_rgba(37,99,235,0.65)] transition-all hover:scale-105 active:scale-95"
+      className="fixed bottom-5 right-5 z-50 flex h-16 w-16 items-center justify-center rounded-full reading-panel text-white shadow-[0_20px_45px_-18px_rgba(37,99,235,0.65)] transition-all hover:scale-105 active:scale-95"
       title="Library Assistant"
     >
       <MessageCircle className="w-6 h-6" />
@@ -161,7 +173,7 @@ function ProfileCompletionModal({ user, onComplete }: { user: any; onComplete: (
             </div>
           </div>
 
-          <Button type="submit" disabled={loading} className="w-full h-10 mt-2 rounded-lg bg-gradient-to-r from-sky-500 to-blue-700 text-white shadow-md">
+          <Button type="submit" disabled={loading} className="w-full h-10 mt-2 rounded-lg reading-panel text-white shadow-md">
             {loading ? "Saving Details..." : "Get Started"}
           </Button>
         </form>
@@ -175,12 +187,13 @@ function ProfileCompletionModal({ user, onComplete }: { user: any; onComplete: (
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function StudentDashboard() {
   const navigate = useNavigate();
+  const { state } = useLocation();
   const [user, setUser] = useState<any>(() => {
     const saved = window.localStorage.getItem('smart-library-user');
     return saved ? JSON.parse(saved) : null;
   });
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<string>(() => ['chatbot', 'history'].includes(state?.tab) ? state.tab : 'dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Chatbot Persistent State
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>(initialMessages);
@@ -324,7 +337,7 @@ export default function StudentDashboard() {
         ...b,
         id: b.book_id,
         available: b.available_copies > 0,
-        coverUrl: `https://images.unsplash.com/photo-1543002588-bfa74002ed7e?q=80&w=200&auto=format&fit=crop` // Default placeholder for real books
+
       }));
       setBooks(enrichedBooks);
     } catch (err) {
@@ -516,7 +529,7 @@ export default function StudentDashboard() {
 
   // Nav items
   const navItems = [
-    { key: 'dashboard', label: 'Dashboard', icon: Book },
+    { key: 'dashboard', label: 'Discover', icon: Book },
     { key: 'profile', label: 'Profile Details', icon: User },
     { key: 'history', label: 'Book History', icon: History },
     { key: 'chatbot', label: 'Chatbot', icon: MessageCircle },
@@ -524,7 +537,7 @@ export default function StudentDashboard() {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.14),_transparent_22%),linear-gradient(180deg,_#f8fbff_0%,_#eff6ff_44%,_#f8fafc_100%)] transition-colors dark:bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),_transparent_22%),linear-gradient(180deg,_#020617_0%,_#0f172a_52%,_#020617_100%)]">
+    <div className="min-h-screen flex flex-col reading-screen student-workspace transition-colors">
 
       {/* Borrow Request Overlay */}
       {borrowStatus !== 'idle' && (
@@ -671,7 +684,7 @@ export default function StudentDashboard() {
       )}
 
       {/* ── Top Bar ───────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-white/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
+      <header className="relative z-40 border-b border-white/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-4">
             <Button
@@ -790,7 +803,7 @@ export default function StudentDashboard() {
         {/* ── Sidebar ───────────────────────────────── */}
         <aside
           className={`
-            fixed lg:static inset-y-0 left-0 z-30 flex flex-col
+            fixed inset-y-0 left-0 z-30 lg:sticky lg:top-0 lg:h-dvh lg:self-start lg:shrink-0 lg:overflow-y-auto flex flex-col
             ${sidebarCollapsed ? 'w-20' : 'w-64'}
             border-r border-white/60 bg-white/72 shadow-lg backdrop-blur-xl transform transition-all duration-300 ease-in-out dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-black/30
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
@@ -823,7 +836,7 @@ export default function StudentDashboard() {
                 className={`w-full flex items-center rounded-2xl px-4 py-3 transition-all duration-200
                   ${sidebarCollapsed ? 'justify-center' : 'gap-3'}
                   ${activeTab === key
-                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'
+                    ? 'bg-sky-100 text-sky-900 dark:bg-sky-500/15 dark:text-sky-200'
                     : 'text-gray-700 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800'
                   }`}
               >
@@ -853,35 +866,152 @@ export default function StudentDashboard() {
           {/* ════ DASHBOARD TAB ════ */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
-              <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/75 p-6 shadow-[0_25px_60px_-30px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/75 dark:shadow-black/30 lg:p-8">
-                <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-                  <div>
-                    <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-300">
-                      <Sparkles className="size-3.5" />
-                      Student Dashboard
-                    </p>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Welcome back to your library space.</h1>
-                    <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-300">
-                      Track your borrowed books, discover new titles, and use the assistant to move through your reading journey faster.
-                    </p>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
-                    <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-700 p-4 text-white">
-                      <p className="text-xs uppercase tracking-[0.2em] text-sky-100">Admission No</p>
-                      <p className="mt-2 text-lg font-semibold">{user?.admission_number}</p>
+              <div className="discover-header"><h1>Discover</h1>
+                <div className="mb-6 relative">
+                  <div className="relative max-w-xl w-full z-20">
+                    {/* highlighted search box, left-aligned */}
+                    <div className="relative bg-white border border-sky-200 rounded-xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-sky-300 dark:border-sky-500/30 dark:bg-slate-900">
+                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-400" />
+                      <Input
+                        type="text"
+                        aria-label="Search catalog by title" placeholder="Search the catalog by title"
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setShowSuggestions(true);
+                          setHighlightedIndex(-1);
+                        }}
+                        onFocus={() => setShowSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                        onKeyDown={(e) => {
+                          const suggestedVisible = availableBooks.slice(0, 5);
+                          if (showSuggestions && suggestedVisible.length > 0) {
+                            if (e.key === 'ArrowDown') {
+                              e.preventDefault();
+                              setHighlightedIndex((prev) => Math.min(prev + 1, suggestedVisible.length - 1));
+                            } else if (e.key === 'ArrowUp') {
+                              e.preventDefault();
+                              setHighlightedIndex((prev) => Math.max(prev - 1, -1));
+                            } else if (e.key === 'Enter') {
+                              e.preventDefault();
+                              // Apply the highlighted suggestion if any
+                              if (highlightedIndex >= 0 && highlightedIndex < suggestedVisible.length) {
+                                setSearchQuery(suggestedVisible[highlightedIndex].title);
+                              }
+                              setShowSuggestions(false);
+                              setHighlightedIndex(-1);
+                              setTimeout(() => {
+                                document.getElementById('books-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }, 50);
+                            }
+                          } else if (e.key === 'Enter') {
+                            e.preventDefault();
+                            setShowSuggestions(false);
+                            setTimeout(() => {
+                              document.getElementById('books-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 50);
+                          }
+                        }}
+                        className="pl-12 rounded-lg w-full text-base py-3 bg-transparent border-none"
+                      />
                     </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/70">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Department</p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{user?.department}</p>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/70">
-                      <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Profile</p>
-                      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{profileCompletion}% complete</p>
-                    </div>
+
+                    {/* Dropdown Suggestions */}
+                    {showSuggestions && searchQuery && availableBooks.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-30 dark:bg-slate-900 dark:border-slate-800">
+                        {availableBooks.slice(0, 5).map((book, idx) => (
+                          <div
+                            key={book.id}
+                            onMouseDown={(e) => {
+                              // onMouseDown fires before the input's onBlur, making sure the click registers
+                              e.preventDefault();
+                              setSearchQuery(book.title);
+                              setShowSuggestions(false);
+                              setHighlightedIndex(-1);
+
+                              // Slight delay gives React time to render the filter before scrolling
+                              setTimeout(() => {
+                                document.getElementById('books-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                              }, 50);
+                            }}
+                            className={`px-4 py-3 cursor-pointer flex items-center justify-between transition-colors ${highlightedIndex === idx
+                                ? 'bg-sky-100 dark:bg-sky-500/20'
+                                : 'hover:bg-sky-50 dark:hover:bg-sky-500/10'
+                              }`}
+                          >
+                            <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate pr-4">{book.title}</span>
+                            <span className="text-[10px] uppercase font-semibold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full whitespace-nowrap dark:bg-sky-500/20 dark:text-sky-400">{book.department}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              </section>
 
+              </div>
+              <div className="subject-shelf"><h2>Explore by subject</h2><div>{subjectShelf.map(([name, query, cover]) => (
+                <button key={name} onClick={() => { setSelectedDepartment('All Departments'); setSearchQuery(query); document.getElementById('books-grid')?.scrollIntoView({block:'start'}); }}><img src={cover} alt="" /><span>{name}</span></button>
+              ))}</div></div>
+              {/* Available Books */}
+              <section id="books-grid" className="scroll-mt-28">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4 dark:text-slate-100">Available Books</h2>
+
+                <div className="mb-4 flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2 text-sm text-gray-700 font-medium dark:text-slate-300">
+                    <span>Department:</span>
+                  </div>
+                  {departments.map((department) => (
+                    <button
+                      key={department}
+                      onClick={() => setSelectedDepartment(department)}
+                      className={`rounded-full px-4 py-2 text-sm transition-all border ${selectedDepartment === department
+                          ? 'bg-sky-600 text-white border-sky-600'
+                          : 'bg-white text-gray-700 border-gray-200 hover:border-sky-300 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-400 dark:hover:text-sky-300'
+                        }`}
+                    >
+                      {department}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Secret Anchor Target specifically placed directly over the results */}
+                <div id="books-results" className="scroll-mt-28"></div>
+
+                {availableBooks.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                    No available books found for {selectedDepartment}.
+                  </div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {availableBooks.slice(0, 12).map((book) => (
+                      <div
+                        key={book.id}
+                        className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-lg transition-shadow dark:bg-slate-900 dark:shadow-black/20 flex h-full flex-col"
+                      >
+                        <div className="bg-gray-50 p-4 flex items-center justify-center dark:bg-slate-800">
+                          <div className="catalog-jacket" data-tone={book.id.charCodeAt(book.id.length - 1) % 4} aria-hidden="true"><small>{book.book_id}</small><strong>{book.title}</strong><span>{book.author}</span></div>
+                        </div>
+                        <div className="p-4 flex flex-col flex-1">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-sky-600">{book.department}</span>
+                          </div>
+                          <div className="flex-1">
+                            <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 dark:text-slate-100">{book.title}</h3>
+                            <p className="text-sm text-gray-600 mb-4 line-clamp-2 dark:text-slate-400">{book.author}</p>
+                          </div>
+                          <Button
+                            disabled={!isUserAllProfileFieldsFilled}
+                            onClick={() => initBorrow(book.id, book.title)}
+                            className="w-full whitespace-nowrap bg-sky-600 hover:bg-sky-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mt-auto"
+                          >
+                            {isUserAllProfileFieldsFilled ? 'Borrow' : <><Lock className="w-3.5 h-3.5 mr-1" /> Locked</>}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
               {/* Profile completion warning */}
               {!isUserAllProfileFieldsFilled && (
                 <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 overflow-hidden">
@@ -952,151 +1082,7 @@ export default function StudentDashboard() {
                 )}
               </section>
 
-              {/* Available Books */}
-              <section id="books-grid" className="scroll-mt-28">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4 dark:text-slate-100">Available Books</h2>
 
-                <div className="mb-4 flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2 text-sm text-gray-700 font-medium dark:text-slate-300">
-                    <span>Department:</span>
-                  </div>
-                  {departments.map((department) => (
-                    <button
-                      key={department}
-                      onClick={() => setSelectedDepartment(department)}
-                      className={`rounded-full px-4 py-2 text-sm transition-all border ${selectedDepartment === department
-                          ? 'bg-amber-600 text-white border-amber-600'
-                          : 'bg-white text-gray-700 border-gray-200 hover:border-amber-300 hover:text-amber-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-amber-400 dark:hover:text-amber-300'
-                        }`}
-                    >
-                      {department}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mb-6 relative">
-                  <div className="relative max-w-lg w-full md:w-1/2 lg:w-1/3 z-20">
-                    {/* highlighted search box, left-aligned */}
-                    <div className="relative bg-white border border-amber-200 rounded-xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-amber-300 dark:border-amber-500/30 dark:bg-slate-900">
-                      <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-amber-400" />
-                      <Input
-                        type="text"
-                        placeholder="Search for books..."
-                        value={searchQuery}
-                        onChange={(e) => {
-                          setSearchQuery(e.target.value);
-                          setShowSuggestions(true);
-                          setHighlightedIndex(-1);
-                        }}
-                        onFocus={() => setShowSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                        onKeyDown={(e) => {
-                          const suggestedVisible = availableBooks.slice(0, 5);
-                          if (showSuggestions && suggestedVisible.length > 0) {
-                            if (e.key === 'ArrowDown') {
-                              e.preventDefault();
-                              setHighlightedIndex((prev) => Math.min(prev + 1, suggestedVisible.length - 1));
-                            } else if (e.key === 'ArrowUp') {
-                              e.preventDefault();
-                              setHighlightedIndex((prev) => Math.max(prev - 1, -1));
-                            } else if (e.key === 'Enter') {
-                              e.preventDefault();
-                              // Apply the highlighted suggestion if any
-                              if (highlightedIndex >= 0 && highlightedIndex < suggestedVisible.length) {
-                                setSearchQuery(suggestedVisible[highlightedIndex].title);
-                              }
-                              setShowSuggestions(false);
-                              setHighlightedIndex(-1);
-                              setTimeout(() => {
-                                document.getElementById('books-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                              }, 50);
-                            }
-                          } else if (e.key === 'Enter') {
-                            e.preventDefault();
-                            setShowSuggestions(false);
-                            setTimeout(() => {
-                              document.getElementById('books-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }, 50);
-                          }
-                        }}
-                        className="pl-12 rounded-lg w-full text-base py-3 bg-transparent border-none"
-                      />
-                    </div>
-
-                    {/* Dropdown Suggestions */}
-                    {showSuggestions && searchQuery && availableBooks.length > 0 && (
-                      <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden z-30 dark:bg-slate-900 dark:border-slate-800">
-                        {availableBooks.slice(0, 5).map((book, idx) => (
-                          <div
-                            key={book.id}
-                            onMouseDown={(e) => {
-                              // onMouseDown fires before the input's onBlur, making sure the click registers
-                              e.preventDefault();
-                              setSearchQuery(book.title);
-                              setShowSuggestions(false);
-                              setHighlightedIndex(-1);
-
-                              // Slight delay gives React time to render the filter before scrolling
-                              setTimeout(() => {
-                                document.getElementById('books-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                              }, 50);
-                            }}
-                            className={`px-4 py-3 cursor-pointer flex items-center justify-between transition-colors ${highlightedIndex === idx
-                                ? 'bg-amber-100 dark:bg-amber-500/20'
-                                : 'hover:bg-amber-50 dark:hover:bg-amber-500/10'
-                              }`}
-                          >
-                            <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate pr-4">{book.title}</span>
-                            <span className="text-[10px] uppercase font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full whitespace-nowrap dark:bg-amber-500/20 dark:text-amber-400">{book.department}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Secret Anchor Target specifically placed directly over the results */}
-                <div id="books-results" className="scroll-mt-28"></div>
-
-                {availableBooks.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                    No available books found for {selectedDepartment}.
-                  </div>
-                ) : (
-                  <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {availableBooks.slice(0, 12).map((book) => (
-                      <div
-                        key={book.id}
-                        className="bg-white rounded-2xl shadow-md overflow-hidden hover:shadow-lg transition-shadow dark:bg-slate-900 dark:shadow-black/20 flex h-full flex-col"
-                      >
-                        <div className="bg-gray-50 p-4 flex items-center justify-center dark:bg-slate-800">
-                          <img
-                            src={book.coverUrl}
-                            alt={book.title}
-                            className="w-full h-72 object-contain"
-                          />
-                        </div>
-                        <div className="p-4 flex flex-col flex-1">
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            <span className="text-xs font-semibold uppercase tracking-[0.15em] text-amber-600">{book.department}</span>
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2 dark:text-slate-100">{book.title}</h3>
-                            <p className="text-sm text-gray-600 mb-4 line-clamp-2 dark:text-slate-400">{book.author}</p>
-                          </div>
-                          <Button
-                            disabled={!isUserAllProfileFieldsFilled}
-                            onClick={() => initBorrow(book.id, book.title)}
-                            className="w-full whitespace-nowrap bg-amber-600 hover:bg-amber-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mt-auto"
-                          >
-                            {isUserAllProfileFieldsFilled ? 'Borrow' : <><Lock className="w-3.5 h-3.5 mr-1" /> Locked</>}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
             </div>
           )}
 
@@ -1416,7 +1402,7 @@ export default function StudentDashboard() {
                     href="https://pages.razorpay.com/pce-library-misc2022"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-700 text-white font-semibold text-base shadow-lg shadow-blue-500/25 hover:from-sky-600 hover:to-blue-800 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                    className="inline-flex items-center gap-3 px-8 py-4 rounded-2xl reading-panel text-white font-semibold text-base shadow-lg shadow-blue-500/25 hover:from-sky-600 hover:to-blue-800 transition-all hover:scale-[1.02] active:scale-[0.98]"
                   >
                     <ExternalLink className="w-5 h-5" />
                     Pay Fine Online

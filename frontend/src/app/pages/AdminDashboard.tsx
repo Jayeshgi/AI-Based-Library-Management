@@ -303,9 +303,9 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,_rgba(148,163,184,0.16),_transparent_24%),linear-gradient(180deg,_#f8fafc_0%,_#eef2f7_48%,_#f8fafc_100%)] transition-colors dark:bg-[radial-gradient(circle_at_top_right,_rgba(71,85,105,0.20),_transparent_24%),linear-gradient(180deg,_#020617_0%,_#111827_52%,_#020617_100%)]">
+    <div className="min-h-screen reading-screen transition-colors">
       {/* Top Bar */}
-      <header className="sticky top-0 z-40 border-b border-white/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
+      <header className="relative z-40 border-b border-white/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/78">
         <div className="flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-4">
             <Button
@@ -364,7 +364,7 @@ export default function AdminDashboard() {
         {/* Sidebar — collapsible like student dashboard */}
         <aside
           className={`
-            fixed inset-y-0 left-0 z-30 lg:top-[73px] lg:bottom-0
+            fixed inset-y-0 left-0 z-30 lg:sticky lg:top-0 lg:h-dvh lg:self-start lg:shrink-0 lg:overflow-y-auto
             border-r border-white/60 bg-white/72 shadow-lg backdrop-blur-xl transition-all duration-200 ease-in-out dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-black/30
             ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
             ${sidebarCollapsed ? 'w-[72px]' : 'w-64'}
@@ -418,8 +418,7 @@ export default function AdminDashboard() {
 
         {/* Main Content */}
         <main
-          className={`flex-1 p-6 transition-[margin] duration-200 lg:p-8 ${sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-64'
-            }`}
+          className="min-w-0 flex-1 p-6 lg:p-8"
         >
           {activeTab === 'overview' && (
             <div className="space-y-6">
@@ -429,7 +428,7 @@ export default function AdminDashboard() {
                     <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-100 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.22em] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
                       Control Center
                     </p>
-                    <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Library operations, organized clearly.</h1>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">Circulation overview</h1>
                     <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-slate-300">
                       Monitor activity, update records, and manage the collection from a calmer admin surface designed for quick decisions.
                     </p>

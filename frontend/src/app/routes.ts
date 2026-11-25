@@ -4,7 +4,6 @@ import StudentLogin from './pages/StudentLogin';
 import AdminLogin from './pages/AdminLogin';
 import StudentDashboard from './pages/StudentDashboard';
 import AdminDashboard from './pages/AdminDashboard';
-import Developers from './pages/Developers';
 
 export const router = createBrowserRouter([
   {
@@ -33,6 +32,6 @@ export const router = createBrowserRouter([
   },
   {
     path: '/developers',
-    Component: Developers,
+    loader: () => redirect('/'),
   },
 ]);
